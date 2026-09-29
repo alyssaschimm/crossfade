@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crossfade"
+version = "0.1.0"
+description = "Convert playlists between Apple Music and Spotify."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["requests>=2.32.4"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+crossfade = "crossfade.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["crossfade*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
