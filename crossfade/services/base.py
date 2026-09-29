@@ -63,19 +63,25 @@ class JsonClient:
 
     def request(self, method: str, path_or_url: str, params=None, json=None) -> dict:
         url = self.url_for(path_or_url)
+        # Non-idempotent requests (creating a playlist, appending tracks) are only
+        # retried when the server certainly did not act on them, to avoid
+        # duplicate playlists or tracks.
+        idempotent = method.upper() in ("GET", "HEAD", "PUT", "DELETE")
         for attempt in range(self.max_retries + 1):
             try:
                 response = self.session.request(
                     method, url, headers=self.headers, params=params, json=json, timeout=self.timeout
                 )
             except requests.RequestException as exc:
-                if attempt >= self.max_retries:
+                retryable = idempotent or isinstance(exc, requests.ConnectTimeout)
+                if not retryable or attempt >= self.max_retries:
                     raise ApiError(f"{method} {url} failed: {exc}") from exc
                 self.sleep(2**attempt)
                 continue
 
             status = response.status_code
-            if (status == 429 or status >= 500) and attempt < self.max_retries:
+            retryable = status == 429 or (idempotent and status >= 500)
+            if retryable and attempt < self.max_retries:
                 self.sleep(self._retry_delay(response, attempt))
                 continue
             if status >= 400:

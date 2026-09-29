@@ -64,3 +64,22 @@ def test_score_exact_and_fuzzy():
 
     far = track("Here Comes the Sun", "The Beatles", duration_ms=240000)
     assert not score_tracks(src, far).exact
+
+
+@pytest.mark.parametrize(
+    "a, b",
+    [
+        (["Queen"], ["Queen Latifah"]),
+        (["Prince Royce"], ["Prince"]),
+        (["Train"], ["Train Robbers"]),
+    ],
+)
+def test_artist_name_prefix_is_not_a_full_match(a, b):
+    assert artist_similarity(a, b) < 1.0
+    assert not score_tracks(track("Crazy", *a, duration_ms=200000), track("Crazy", *b, duration_ms=201000)).exact
+
+
+def test_artist_similarity_matches_listed_artist_inside_combined_credit():
+    assert artist_similarity(["Earth, Wind & Fire", "The Emotions"], ["Earth, Wind & Fire & The Emotions"]) == 1.0
+    assert artist_similarity(["Drake"], ["Travis Scott feat. Drake"]) == 1.0
+    assert artist_similarity(["Lil Nas X", "Billy Ray Cyrus"], ["Lil Nas X & Billy Ray Cyrus"]) == 1.0

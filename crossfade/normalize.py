@@ -13,7 +13,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import FrozenSet, Iterable, Optional
+from typing import FrozenSet, Iterable, Optional, Set
 
 from .models import Track
 
@@ -140,8 +140,26 @@ def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def _contains_words(haystack: str, needle: str) -> bool:
-    return bool(needle) and f" {needle} " in f" {haystack} "
+_CREDIT_SEP_RE = re.compile(r"(\s*(?:,|/|;|\band\b|\bx\b|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b|\bwith\b)\s*)")
+
+
+def _credit_entities(credit: str) -> Set[str]:
+    """Every normalised name a credit string could refer to.
+
+    ``"Earth, Wind & Fire & The Emotions"`` yields ``earth wind and fire``,
+    ``emotions``, the whole string and other contiguous spans, so that it can be
+    compared against separately listed artists without letting ``"Queen"``
+    match ``"Queen Latifah"``.
+    """
+    tokens = _CREDIT_SEP_RE.split(_fold(credit))
+    parts = len(tokens) // 2 + 1
+    entities = set()
+    for i in range(parts):
+        for j in range(i, parts):
+            name = normalize_artist("".join(tokens[2 * i : 2 * j + 1]))
+            if name:
+                entities.add(name)
+    return entities
 
 
 def artist_similarity(a: Iterable[str], b: Iterable[str]) -> float:
@@ -150,15 +168,16 @@ def artist_similarity(a: Iterable[str], b: Iterable[str]) -> float:
     Handles one service listing artists separately and the other combining
     them into a single string (``"A & B"``).
     """
-    a_norm = [normalize_artist(x) for x in a if x]
-    b_norm = [normalize_artist(x) for x in b if x]
-    if not a_norm or not b_norm:
+    a, b = [x for x in a if x], [x for x in b if x]
+    a_norm, b_norm = [normalize_artist(x) for x in a], [normalize_artist(x) for x in b]
+    if not any(a_norm) or not any(b_norm):
         return 0.0
-    a_joined, b_joined = " ".join(a_norm), " ".join(b_norm)
-    if _contains_words(b_joined, a_norm[0]) or _contains_words(a_joined, b_norm[0]):
+    a_entities = set().union(*(_credit_entities(x) for x in a))
+    b_entities = set().union(*(_credit_entities(x) for x in b))
+    if a_norm[0] in b_entities or b_norm[0] in a_entities:
         return 1.0
     best_primary = max(similarity(a_norm[0], y) for y in b_norm)
-    return max(best_primary, similarity(a_joined, b_joined))
+    return max(best_primary, similarity(" ".join(a_norm), " ".join(b_norm)))
 
 
 def duration_similarity(a: Optional[int], b: Optional[int]) -> Optional[float]:

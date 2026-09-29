@@ -190,3 +190,31 @@ def test_apple_headers():
     service = AppleMusicService("dev", user_token="user")
     assert service.client.headers["Music-User-Token"] == "user"
     assert service.client.headers["Authorization"].split() == ["Bearer", "dev"]
+
+
+def test_json_client_does_not_retry_post_server_errors():
+    session = FakeHttpSession({("POST", "https://api.test/x"): FakeHttpResponse(502, {})})
+    with pytest.raises(ApiError):
+        JsonClient("https://api.test", {}, session=session, sleep=lambda s: None).post("/x", json={})
+    assert len(session.calls) == 1
+
+
+def test_json_client_retries_post_rate_limits():
+    session = FakeHttpSession({("POST", "https://api.test/x"): [
+        FakeHttpResponse(429, {}, {"Retry-After": "1"}), FakeHttpResponse(201, {"id": "p"})]})
+    assert JsonClient("https://api.test", {}, session=session, sleep=lambda s: None).post("/x") == {"id": "p"}
+
+
+def test_json_client_does_not_retry_post_read_timeouts():
+    import requests
+
+    class TimeoutSession:
+        calls = 0
+
+        def request(self, *args, **kwargs):
+            TimeoutSession.calls += 1
+            raise requests.ReadTimeout("slow")
+
+    with pytest.raises(ApiError):
+        JsonClient("https://api.test", {}, session=TimeoutSession(), sleep=lambda s: None).post("/x")
+    assert TimeoutSession.calls == 1
